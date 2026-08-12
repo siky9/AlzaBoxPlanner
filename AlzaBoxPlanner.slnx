@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AlzaBox.Planner.Core/AlzaBox.Planner.Core.csproj" />
+    <Project Path="src/AlzaBox.Planner.Cli/AlzaBox.Planner.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AlzaBox.Planner.Tests/AlzaBox.Planner.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>AlzaBox.Planner.Cli</RootNamespace>
+    <AssemblyName>alzabox-planner</AssemblyName>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AlzaBox.Planner.Core\AlzaBox.Planner.Core.csproj" />
+  </ItemGroup>
+
+</Project>
