@@ -37,8 +37,15 @@ public sealed class LoadPlan
 
     public int UsedVanCount => Vans.Count(van => van.PackageIndices.Count > 0);
 
+    /// <summary>Kolik korun nám nejvýš uniklo proti teoretickému optimu.</summary>
+    /// <remarks>
+    /// Ořezáno zdola nulou: když se plán s horní mezí potká, liší se oba součty stejných
+    /// <c>double</c>ů jen pořadím sčítání a rozdíl může vyjít nepatrně záporný.
+    /// </remarks>
+    public double GapCzk => Math.Max(0.0, Selection.UpperBoundCzk - RevenueCzk);
+
     /// <summary>Kolik procent výnosnosti nám nejvýš uniklo proti teoretickému optimu.</summary>
     public double GapPercent => Selection.UpperBoundCzk > 0
-        ? 100.0 * (Selection.UpperBoundCzk - RevenueCzk) / Selection.UpperBoundCzk
+        ? 100.0 * GapCzk / Selection.UpperBoundCzk
         : 0.0;
 }

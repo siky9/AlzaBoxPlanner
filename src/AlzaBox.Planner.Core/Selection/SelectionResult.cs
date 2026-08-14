@@ -33,6 +33,11 @@ public sealed class SelectionResult
     /// <summary>Kolik průchodů (řazení) si hledání θ vyžádalo.</summary>
     public required int GreedyRuns { get; init; }
 
-    /// <summary>Odchylka od horní meze v procentech.</summary>
-    public double GapPercent => UpperBoundCzk > 0 ? 100.0 * (UpperBoundCzk - RevenueCzk) / UpperBoundCzk : 0.0;
+    /// <summary>
+    /// Odchylka od horní meze v procentech. Ořezáno zdola nulou – když výběr meze dosáhne,
+    /// liší se oba součty stejných <c>double</c>ů jen pořadím sčítání.
+    /// </summary>
+    public double GapPercent => UpperBoundCzk > 0
+        ? Math.Max(0.0, 100.0 * (UpperBoundCzk - RevenueCzk) / UpperBoundCzk)
+        : 0.0;
 }

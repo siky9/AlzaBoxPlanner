@@ -76,4 +76,71 @@ public class DeliveryPlannerTests
 
         Assert.True(plan.RevenueCzk <= plan.Selection.UpperBoundCzk + 1e-6);
     }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(100)]
+    [InlineData(1_000)]
+    [InlineData(3_000)]
+    public void Kdyz_se_vejde_vsechno_vyjede_jen_nutny_pocet_dodavek(int count)
+    {
+        // Úterý a čtvrtek: posílat 120 poloprázdných dodávek by bylo dražší, ne rychlejší.
+        Package[] packages = TestBatches.Random(count, seed: 42, minDensity: 80, maxDensity: 300);
+        FleetCapacity capacity = FleetCapacity.Default;
+
+        LoadPlan plan = _planner.Plan(packages, capacity);
+
+        int minimumVans = Math.Max(
+            (int)Math.Ceiling(plan.VolumeM3 / capacity.VanVolumeM3),
+            (int)Math.Ceiling(plan.WeightKg / capacity.VanWeightKg));
+
+        Assert.Empty(LoadPlanValidator.Validate(packages, plan));
+        Assert.Equal(packages.Length, plan.LoadedPackageCount);
+        Assert.Equal(minimumVans, plan.UsedVanCount);
+    }
+
+    [Fact]
+    public void Kdyz_je_nabidka_vetsi_nez_flotila_vyjedou_vsechny_dodavky()
+    {
+        // Konsolidace nesmí zadržet kapacitu, když je pro ni využití.
+        Package[] packages = TestBatches.Random(count: 100_000, seed: 29, minDensity: 80, maxDensity: 300);
+        FleetCapacity capacity = FleetCapacity.Default;
+
+        LoadPlan plan = _planner.Plan(packages, capacity);
+
+        Assert.Equal(capacity.VanCount, plan.UsedVanCount);
+        Assert.True(plan.VolumeUtilization > 0.999, $"Objem využit jen na {plan.VolumeUtilization:P2}.");
+    }
+
+    [Fact]
+    public void Zasilka_velka_skoro_jako_dodavka_dostane_dodavku_pro_sebe()
+    {
+        // Mezní případ předpokladu „zásilka je proti dodávce drobná“: dvě zásilky po 3,6 m³
+        // se do jedné dodávky nevejdou, takže flotila uveze právě 120 kusů. Souhrnná
+        // kapacita jich připouští 233 – horní mez je tu proto volná, ne plán špatný.
+        var packages = new Package[400];
+        for (int i = 0; i < packages.Length; i++)
+            packages[i] = new Package(Id: i + 1, WeightKg: 100, VolumeM3: 3.6, RevenueCzk: 1_000);
+
+        LoadPlan plan = _planner.Plan(packages, FleetCapacity.Default);
+
+        Assert.Empty(LoadPlanValidator.Validate(packages, plan));
+        Assert.Equal(FleetCapacity.Default.VanCount, plan.LoadedPackageCount);
+        Assert.All(plan.Vans, van => Assert.Single(van.PackageIndices));
+    }
+
+    [Fact]
+    public void Odstup_od_optima_nevychazi_zaporne()
+    {
+        // Když plán horní meze dosáhne, liší se oba součty jen pořadím sčítání –
+        // hlášený odstup přesto nesmí spadnout pod nulu (dřív se tiskl „-0 Kč“).
+        for (int count = 1; count <= 400; count += 37)
+        {
+            LoadPlan plan = _planner.Plan(TestBatches.Random(count, seed: count), FleetCapacity.Default);
+
+            Assert.True(plan.GapCzk >= 0.0, $"Odstup {plan.GapCzk} Kč vyšel záporný.");
+            Assert.True(plan.GapPercent >= 0.0, $"Odstup {plan.GapPercent} % vyšel záporný.");
+            Assert.Equal(0.0, plan.GapPercent, 9); // veze se všechno, odstup je nulový až na zaokrouhlení
+        }
+    }
 }

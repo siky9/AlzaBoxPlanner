@@ -98,11 +98,29 @@ s rezervou v nosnosti, objemné do dodávek s rezervou v místě.
 > každé dodávky blízko hustotě, při které dojdou oba zdroje naráz; nevešlo se pak 34 zásilek
 > a ztráta klesla na 0,015 %.
 
+Skalární součin ale sám o sobě míří do **nejprázdnější** vhodné dodávky, takže náklad rozptýlí
+přes celou flotilu – sto zásilek by rozvezlo sto dodávek po jednom balíku. Proto se nakládá
+jen do *otevřených* dodávek a jejich počet startuje na spodní mezi
+
+```
+minimum = max( ⌈objem výběru / 7⌉ , ⌈hmotnost výběru / 5500⌉ )
+```
+
+Do méně vozidel se náklad vejít nemůže, takže se tím nic neztrácí; další dodávka se otevře,
+jakmile se zásilka do žádné otevřené nevejde. V běžný den vyjde minimum rovnou 120 a nakládá
+se přesně jako předtím (ověřeno: výnos je na korunu shodný). V úterý a ve čtvrtek se ale
+z garáže vyjíždí jen tolik dodávek, kolik je opravdu potřeba.
+
 ### Fáze 3 – dosypání
-Zbylá kapacita se nabídne dosud nenaloženým zásilkám sestupně podle výnosnosti. Tím se vrátí
-zpátky to, co zaokrouhlení na celé dodávky ukouslo. Průchod je levný: největší volné místo
-napříč flotilou se drží stranou, takže se zásilka, která se nevejde nikam, zamítne
-v konstantním čase.
+Zbylá kapacita otevřených dodávek se nabídne dosud nenaloženým zásilkám sestupně podle
+výhodnosti. Průchod je levný: největší volné místo napříč flotilou se drží stranou, takže se
+zásilka, která se nevejde nikam, zamítne v konstantním čase.
+
+Na měřených dávkách tahle fáze **nepřidá nic** – nakládání zaplní flotilu tak těsně, že
+z 840 m³ zbývají řádově setiny m³, tedy míň než nejmenší zásilka v nabídce. Smysl má u dávek
+s hrubší zrnitostí, kde se za poslední velkou zásilku vejde ještě několik malých. Za jeden
+průchod navíc je to levná pojistka, takže v kódu zůstává – ale výsledky v tabulce níž jí
+nevděčí za nic.
 
 ## 4. Kvalita řešení – změřená, ne tvrzená
 
@@ -160,10 +178,17 @@ to by nejhorší případ srazilo zhruba na pětinu. Zatím to nebylo potřeba.
 1. **Bez trasování a geografie** – dodávky jsou kontejnery („teleport“).
 2. **Objem je aditivní** – žádné 3D balení, dle zadání se rozměry neřeší.
 3. **Výnosnost je kladná**, každá přepravitelná zásilka se vejde do jedné dodávky.
-4. **Zásilky jsou nezávislé** – žádná objednávka nemusí jet pohromadě. Rozšíření je snadné:
+4. **Zásilka je proti dodávce drobná** (pozorování (b) výše). Na tom stojí rozpojení výběru
+   a nakládání. Kdyby dávka byla samé zboží velikosti dodávky, rozdíl mezi souhrnnou kapacitou
+   a skutečným bin-packingem přestane být zaokrouhlovací: 400 zásilek po 3,6 m³ souhrnná
+   kapacita připouští 233, ale do 7m³ dodávky se vejde jen jedna, takže se odveze 120 kusů.
+   Plán je i tak **optimální** (víc jich flotila neuveze) – volná je v tomhle režimu horní mez,
+   ne řešení. Hlášený odstup od optima tedy zůstává poctivý horní odhad ztráty, jen přestává
+   být těsný. Pro reálný mix AlzaBoxů (setiny až desetiny m³) to nenastává.
+5. **Zásilky jsou nezávislé** – žádná objednávka nemusí jet pohromadě. Rozšíření je snadné:
    objednávka se sloučí do jedné složené položky.
-5. **Obě denní jízdy se plánují nezávisle**, nenaložené zásilky se přesouvají do další.
-6. Peníze jsou `double`, ne `decimal` – pro plánovací výpočet nad statisíci položkami je
+6. **Obě denní jízdy se plánují nezávisle**, nenaložené zásilky se přesouvají do další.
+7. Peníze jsou `double`, ne `decimal` – pro plánovací výpočet nad statisíci položkami je
    přesnost hluboko pod haléřem a `decimal` by v horké smyčce zbytečně brzdil.
 
 ### Jedna poznámka mimo zadání
@@ -194,8 +219,8 @@ src/AlzaBox.Planner.Core/
   Validation/     LoadPlanValidator
   DeliveryPlanner.cs      fasáda: Plan(zásilky, kapacita) → LoadPlan
 src/AlzaBox.Planner.Cli/  generátor dat, srovnávací strategie, report
-tests/                    23 testů – hrubá síla na malých instancích, platnost horní meze,
-                          proveditelnost plánu, determinismus
+tests/                    30 testů – hrubá síla na malých instancích, platnost horní meze,
+                          proveditelnost plánu, počet vyjetých dodávek, determinismus
 ```
 
 Obě fáze jsou za rozhraním, takže jdou vyměnit nezávisle (`PrioritySelector` v CLI je toho
@@ -212,4 +237,5 @@ příkladem – naivní strategie prochází přesně stejnou nakládací fází
 ```
 
 Případ „úterý a čtvrtek“ se ukáže třeba na `--packages 20000`: vejde se všechno, odstup od
-optima je 0,0000 % a použije se 86 dodávek ze 120.
+optima je 0,0000 % a použije se **86 dodávek ze 120** – přesně tolik, kolik jich objem
+nákladu vyžaduje. Na `--packages 1000` vyjede dodávek pět, na `--packages 100` jediná.

@@ -4,14 +4,20 @@ using AlzaBox.Planner.Core.Selection;
 namespace AlzaBox.Planner.Core.Assignment;
 
 /// <summary>
-/// Rozdělení vybraných zásilek do konkrétních dodávek metodou Best-Fit Decreasing
-/// a následné dosypání zbytkové kapacity.
+/// Rozdělení vybraných zásilek do konkrétních dodávek heuristikou <i>dot product</i>
+/// pro vektorový bin-packing a následné dosypání zbytkové kapacity.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Výběrová fáze počítá se souhrnnou kapacitou flotily, což je relaxace – teoreticky se
 /// vybraná množina nemusí do 120 dodávek rozdělit beze zbytku. Protože je ale zásilka
-/// o tři až čtyři řády menší než dodávka, je ztráta zaokrouhlením v praxi nulová a to,
-/// co přece jen propadne, nahradí dosypávací fáze jinou zásilkou srovnatelné hodnoty.
+/// o tři až čtyři řády menší než dodávka, je ztráta zaokrouhlením v praxi nulová
+/// (řádově desítky zásilek ze statisíců).
+/// </para>
+/// <para>
+/// Vyjíždí jen tolik dodávek, kolik je opravdu potřeba – viz <see cref="MinimumVanCount"/>.
+/// V dnech, kdy se veze všechno (úterý a čtvrtek), tak nejede 120 poloprázdných vozidel.
+/// </para>
 /// </remarks>
 public sealed class VanAssigner
 {
@@ -23,23 +29,66 @@ public sealed class VanAssigner
         var isPlaced = new bool[packages.Length];
         int[] toPlace = OrderByDecreasingSize(packages, selection.SelectedIndices, capacity);
 
+        // Nakládá se jen do „otevřených“ dodávek; další se otevře, teprve když se zásilka
+        // nikam nevejde. Start na spodním odhadu, aby se náklad rovnoměrně rozprostřel
+        // právě mezi ty dodávky, které stejně musí vyjet.
+        int openVans = MinimumVanCount(selection, capacity);
+
         int placedCount = 0;
         foreach (int index in toPlace)
         {
-            if (!TryPlace(vans, index, packages[index], capacity)) continue;
+            if (!TryPlace(vans, ref openVans, index, packages[index], capacity)) continue;
             isPlaced[index] = true;
             placedCount++;
         }
 
         int unplacedFromSelection = toPlace.Length - placedCount;
-        int topUpCount = TopUp(packages, selection.RankedOrder, isPlaced, vans, capacity);
+        int topUpCount = TopUp(packages, selection.RankedOrder, isPlaced, vans, openVans, capacity);
 
         return BuildPlan(vans, selection, capacity, placedCount + topUpCount, unplacedFromSelection, topUpCount);
     }
 
     /// <summary>
-    /// Umístí zásilku do dodávky podle skalárního součinu poptávky a zbývající kapacity
-    /// (heuristika „dot product“ pro vektorové bin-packing).
+    /// Spodní mez počtu dodávek, do kterých se vybraná množina vůbec může vejít: obsah
+    /// nelze rozdělit do méně vozidel, než kolik jich vyžaduje samotný objem nebo hmotnost.
+    /// </summary>
+    /// <remarks>
+    /// V běžný den vyjde 120 (výběr flotilu naplní), takže se nakládá stejně jako předtím.
+    /// V úterý a ve čtvrtek, kdy se veze celá nabídka, vyjde výrazně méně – a jen tolik
+    /// dodávek se pak použije. Kdyby mez byla příliš optimistická (zaokrouhlení, nešikovný
+    /// mix hustot), <see cref="TryPlace"/> otevře další dodávku.
+    /// </remarks>
+    private static int MinimumVanCount(SelectionResult selection, FleetCapacity capacity)
+    {
+        int byVolume = (int)Math.Ceiling(selection.VolumeM3 / capacity.VanVolumeM3);
+        int byWeight = (int)Math.Ceiling(selection.WeightKg / capacity.VanWeightKg);
+
+        return Math.Clamp(Math.Max(byVolume, byWeight), 1, capacity.VanCount);
+    }
+
+    /// <summary>
+    /// Umístí zásilku do některé z otevřených dodávek; když se nevejde do žádné, otevře další.
+    /// </summary>
+    private static bool TryPlace(
+        Van[] vans, ref int openVans, int index, in Package package, FleetCapacity capacity)
+    {
+        Van? bestVan = FindBestVan(vans, openVans, package, capacity);
+
+        if (bestVan is null)
+        {
+            // Čerstvá dodávka pobere cokoli, co je vůbec přepravitelné.
+            if (openVans >= vans.Length || !vans[openVans].CanFit(package)) return false;
+            bestVan = vans[openVans++];
+        }
+
+        bestVan.Load(index, package);
+        return true;
+    }
+
+    /// <summary>
+    /// Vybere dodávku podle skalárního součinu poptávky a zbývající kapacity
+    /// (heuristika „dot product“ pro vektorový bin-packing). Hledá jen mezi prvními
+    /// <paramref name="openVans"/> dodávkami, aby zbytek flotily nemusel vyjíždět.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -55,7 +104,7 @@ public sealed class VanAssigner
     /// součin naopak drží náklad každé dodávky blízko hustotě, při které dojdou oba zdroje naráz.
     /// </para>
     /// </remarks>
-    private static bool TryPlace(Van[] vans, int index, in Package package, FleetCapacity capacity)
+    private static Van? FindBestVan(Van[] vans, int openVans, in Package package, FleetCapacity capacity)
     {
         double demandVolume = package.VolumeM3 / capacity.VanVolumeM3;
         double demandWeight = package.WeightKg / capacity.VanWeightKg;
@@ -63,8 +112,9 @@ public sealed class VanAssigner
         Van? bestVan = null;
         double bestScore = double.NegativeInfinity;
 
-        foreach (Van van in vans)
+        for (int i = 0; i < openVans; i++)
         {
+            Van van = vans[i];
             if (!van.CanFit(package)) continue;
 
             double score = demandVolume * (van.RemainingVolumeM3 / capacity.VanVolumeM3)
@@ -77,27 +127,37 @@ public sealed class VanAssigner
             }
         }
 
-        if (bestVan is null) return false;
-
-        bestVan.Load(index, package);
-        return true;
+        return bestVan;
     }
 
     /// <summary>
-    /// Dosypání: zbylou kapacitu dodávek nabídneme dosud nenaloženým zásilkám sestupně podle
-    /// výnosnosti. Tím se vrátí zpět to, co zaokrouhlení na celé dodávky ukouslo.
+    /// Dosypání: zbylou kapacitu už otevřených dodávek nabídneme dosud nenaloženým zásilkám
+    /// sestupně podle výhodnosti. Pojistka pro případ, že nakládací fáze nechá použitelnou mezeru.
     /// </summary>
     /// <remarks>
-    /// Aby průchod stovkami tisíc zbylých zásilek nestál 120 porovnání za každou z nich,
+    /// <para>
+    /// V měřených dávkách (statisíce drobných zásilek) fáze nepřidá nic – nakládání doplní
+    /// flotilu tak těsně, že z 840 m³ zbývají řádově setiny m³, tedy méně než nejmenší zásilka.
+    /// Smysl má u dávek s hrubší zrnitostí, kde se za poslední velkou zásilku vejde ještě
+    /// několik malých; stojí jeden průchod navíc, takže se vyplatí ji držet.
+    /// </para>
+    /// <para>
+    /// Nové dodávky se tu neotevírají: kolik vozidel vyjede, rozhodla nakládací fáze a nemá
+    /// smysl posílat další dodávku kvůli zásilkám, které výběr vyhodnotil jako nejméně výnosné.
+    /// </para>
+    /// <para>
+    /// Aby průchod stovkami tisíc zbylých zásilek nestál jedno porovnání za každou dodávku,
     /// držíme si největší volné místo napříč flotilou. Zásilka, která se do něj nevejde,
     /// je zamítnuta v konstantním čase; když volné místo klesne pod nejmenší zásilku dávky,
     /// průchod končí.
+    /// </para>
     /// </remarks>
     private static int TopUp(
-        ReadOnlySpan<Package> packages, int[] rankedOrder, bool[] isPlaced, Van[] vans, FleetCapacity capacity)
+        ReadOnlySpan<Package> packages, int[] rankedOrder, bool[] isPlaced,
+        Van[] vans, int openVans, FleetCapacity capacity)
     {
         (double smallestVolume, double smallestWeight) = SmallestTransportable(packages, capacity);
-        (double freeVolume, double freeWeight) = LargestFreeSpace(vans);
+        (double freeVolume, double freeWeight) = LargestFreeSpace(vans, openVans);
 
         int added = 0;
 
@@ -111,23 +171,25 @@ public sealed class VanAssigner
             if (!capacity.IsTransportable(package)) continue;
             if (package.VolumeM3 > freeVolume || package.WeightKg > freeWeight) continue;
 
-            if (!TryPlace(vans, index, package, capacity)) continue;
+            Van? van = FindBestVan(vans, openVans, package, capacity);
+            if (van is null) continue;
 
+            van.Load(index, package);
             isPlaced[index] = true;
             added++;
-            (freeVolume, freeWeight) = LargestFreeSpace(vans);
+            (freeVolume, freeWeight) = LargestFreeSpace(vans, openVans);
         }
 
         return added;
     }
 
-    private static (double Volume, double Weight) LargestFreeSpace(Van[] vans)
+    private static (double Volume, double Weight) LargestFreeSpace(Van[] vans, int openVans)
     {
         double volume = 0, weight = 0;
-        foreach (Van van in vans)
+        for (int i = 0; i < openVans; i++)
         {
-            if (van.RemainingVolumeM3 > volume) volume = van.RemainingVolumeM3;
-            if (van.RemainingWeightKg > weight) weight = van.RemainingWeightKg;
+            if (vans[i].RemainingVolumeM3 > volume) volume = vans[i].RemainingVolumeM3;
+            if (vans[i].RemainingWeightKg > weight) weight = vans[i].RemainingWeightKg;
         }
 
         return (volume, weight);

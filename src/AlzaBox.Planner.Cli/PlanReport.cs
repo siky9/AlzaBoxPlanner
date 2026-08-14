@@ -31,8 +31,7 @@ public static class PlanReport
         Section("Výnosnost");
         Row("Výnos plánu", $"{plan.RevenueCzk:N0} Kč");
         Row("Horní mez optima", $"{plan.Selection.UpperBoundCzk:N0} Kč");
-        Row("Odstup od optima", $"{plan.GapPercent:N4} %  (nejvýš " +
-                                $"{plan.Selection.UpperBoundCzk - plan.RevenueCzk:N0} Kč)");
+        Row("Odstup od optima", $"{plan.GapPercent:N4} %  (nejvýš {plan.GapCzk:N0} Kč)");
 
         if (baselines.Count > 0)
         {
