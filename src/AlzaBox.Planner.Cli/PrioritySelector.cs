@@ -24,11 +24,14 @@ public sealed class PrioritySelector(string name, Func<Package, double> priority
         int count = packages.Length;
         var key = new double[count];
         var order = new int[count];
+        double transportableRevenue = 0;
 
         for (int i = 0; i < count; i++)
         {
             order[i] = i;
-            key[i] = capacity.IsTransportable(packages[i]) ? -priority(packages[i]) : double.PositiveInfinity;
+            bool transportable = capacity.IsTransportable(packages[i]);
+            key[i] = transportable ? -priority(packages[i]) : double.PositiveInfinity;
+            if (transportable) transportableRevenue += packages[i].RevenueCzk;
         }
 
         Array.Sort(key, order);
@@ -59,8 +62,10 @@ public sealed class PrioritySelector(string name, Func<Package, double> priority
             RevenueCzk = revenue,
             VolumeM3 = capacity.TotalVolumeM3 - volumeLeft,
             WeightKg = capacity.TotalWeightKg - weightLeft,
-            UpperBoundCzk = double.PositiveInfinity, // srovnávací strategie horní mez nepočítá
-            Theta = double.NaN,
+            // Srovnávací strategie Lagrangeovu mez nepočítá. Místo nekonečna (které by z každého
+            // odstupu udělalo NaN) bereme triviálně platnou mez: víc než všechno se naložit nedá.
+            UpperBoundCzk = transportableRevenue,
+            Theta = null, // stínovou cenu tahle strategie nehledá
             GreedyRuns = 1,
         };
     }

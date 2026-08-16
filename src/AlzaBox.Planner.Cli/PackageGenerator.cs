@@ -13,6 +13,14 @@ public enum BatchProfile
 
     /// <summary>Objemné lehké zboží. Objem dojde s velkou rezervou v nosnosti.</summary>
     Light,
+
+    /// <summary>
+    /// Kusové zboží velikosti nábytku či bílé techniky – 0,6–3 m³ a k tomu 2 % kusů přes 7 m³,
+    /// které se do dodávky nevejdou vůbec. Zásilka tu přestává být proti dodávce drobná, takže
+    /// se rozpad na výběr a nakládání začne lámat o zrnitost: mezní případ předpokladu P4,
+    /// na kterém je vidět verdikt <c>GranularityLimited</c> i hlášení o nepřepravitelném zboží.
+    /// </summary>
+    Bulky,
 }
 
 /// <summary>
@@ -28,10 +36,7 @@ public static class PackageGenerator
 
         for (int i = 0; i < count; i++)
         {
-            // Objem log-normálně: hodně malých zásilek, dlouhý chvost velkých. ~0,001–1,5 m³.
-            double volume = Math.Round(Math.Exp(NextNormal(random, mean: -3.9, deviation: 0.9)), 5);
-            volume = Math.Clamp(volume, 0.0005, 1.5);
-
+            double volume = NextVolume(random, profile);
             double density = NextDensity(random, profile);
             double weight = Math.Round(volume * density, 3);
 
@@ -44,6 +49,19 @@ public static class PackageGenerator
         return packages;
     }
 
+    private static double NextVolume(Random random, BatchProfile profile) => profile switch
+    {
+        // Kusové zboží: nejmenší zásilka je desetina dodávky, největší skoro půlka.
+        // Pár procent je rovnou přes dodávku – sedačka nebo velká lednička se do 7 m³ nevejde
+        // a potřebuje jiné vozidlo. Na dávce je tak vidět i hlášení o nepřepravitelném zboží.
+        BatchProfile.Bulky => random.NextDouble() < 0.02
+            ? Math.Round(7.5 + random.NextDouble() * 4.0, 5)
+            : Math.Round(0.6 + random.NextDouble() * 2.4, 5),
+
+        // Jinak log-normálně: hodně malých zásilek, dlouhý chvost velkých. ~0,001–1,5 m³.
+        _ => Math.Clamp(Math.Round(Math.Exp(NextNormal(random, mean: -3.9, deviation: 0.9)), 5), 0.0005, 1.5),
+    };
+
     private static double NextDensity(Random random, BatchProfile profile) => profile switch
     {
         // 10 % velmi hustého zboží, zbytek běžný mix.
@@ -54,6 +72,8 @@ public static class PackageGenerator
             ? random.NextDouble() * 900 + 900
             : random.NextDouble() * 300 + 150,
         BatchProfile.Light => random.NextDouble() * 120 + 30,
+        // Nábytek a bílá technika – lehké na svůj objem, nosnost se úzkým hrdlem nestane.
+        BatchProfile.Bulky => random.NextDouble() * 140 + 60,
         _ => throw new ArgumentOutOfRangeException(nameof(profile)),
     };
 

@@ -11,6 +11,42 @@ public static class LoadPlanValidator
     /// <summary>Tolerance na akumulovanou chybu součtů v pohyblivé řádové čárce.</summary>
     private const double Epsilon = 1e-6;
 
+    /// <summary>
+    /// Kontrola celodenního plánu: každý okruh sám o sobě, a navíc že se okruhy nepřekrývají.
+    /// Druhá jízda plánuje nad zhuštěnou nabídkou a indexy se přepisují zpět na globální –
+    /// právě tam by se chyba schovala nejsnáz, takže se ověřuje adresně.
+    /// </summary>
+    public static IReadOnlyList<string> Validate(ReadOnlySpan<Package> packages, DayPlan day)
+    {
+        var problems = new List<string>();
+        var loaded = new bool[packages.Length];
+
+        foreach (LoadPlan round in day.Rounds)
+        {
+            problems.AddRange(Validate(packages, round));
+
+            foreach (Van van in round.Vans)
+            {
+                foreach (int index in van.PackageIndices)
+                {
+                    if (index < 0 || index >= packages.Length) continue; // ohlásil už průchod okruhem
+                    if (loaded[index]) problems.Add($"Zásilka na indexu {index} je naložena ve dvou okruzích.");
+                    loaded[index] = true;
+                }
+            }
+        }
+
+        foreach (int index in day.UndeliveredIndices)
+        {
+            if (index < 0 || index >= packages.Length)
+                problems.Add($"Nedoručená zásilka: index {index} je mimo rozsah.");
+            else if (loaded[index])
+                problems.Add($"Zásilka na indexu {index} je hlášena jako nedoručená, ale někdo ji veze.");
+        }
+
+        return problems;
+    }
+
     /// <summary>Vrátí seznam nalezených problémů; prázdný seznam znamená platný plán.</summary>
     public static IReadOnlyList<string> Validate(ReadOnlySpan<Package> packages, LoadPlan plan)
     {
@@ -74,6 +110,45 @@ public static class LoadPlanValidator
 
         if (plan.RevenueCzk > plan.Selection.UpperBoundCzk * (1 + 1e-9))
             problems.Add("Výnos plánu překračuje horní mez – horní mez je spočtena špatně.");
+
+        // Po dosypávací fázi se nesmí stát, že ve flotile zbylo místo i zásilky do něj.
+        if (plan.Verdict == CapacityVerdict.SpaceLeftUnused)
+            problems.Add("Ve flotile zůstalo použitelné místo i zásilky, které by se do něj vešly.");
+
+        problems.AddRange(ValidateLeftovers(plan, seen, packages.Length));
+
+        return problems;
+    }
+
+    /// <summary>
+    /// Kontrola zbytku ve skladu. <c>UnloadedIndices</c> není jen údaj do reportu – je to
+    /// nabídka dalšího okruhu, takže chyba v něm by zásilku buď ztratila, nebo poslala na cestu
+    /// dvakrát. Nabídku tohohle okruhu poznáme z <c>RankedOrder</c>, což je celá seřazená nabídka.
+    /// </summary>
+    private static IReadOnlyList<string> ValidateLeftovers(LoadPlan plan, bool[] loaded, int packageCount)
+    {
+        var problems = new List<string>();
+        var listed = new bool[packageCount];
+
+        foreach (int index in plan.UnloadedIndices)
+        {
+            if (index < 0 || index >= packageCount)
+            {
+                problems.Add($"Zbytek ve skladu: index {index} je mimo rozsah.");
+                continue;
+            }
+
+            if (loaded[index]) problems.Add($"Zásilka na indexu {index} je naložená, ale hlásí se jako zbylá.");
+            if (listed[index]) problems.Add($"Zásilka na indexu {index} je ve zbytku uvedena dvakrát.");
+            listed[index] = true;
+        }
+
+        int offered = plan.Selection.RankedOrder.Length;
+        if (plan.LoadedPackageCount + plan.UnloadedIndices.Length != offered)
+        {
+            problems.Add($"Nabídka měla {offered} zásilek, ale naloženo {plan.LoadedPackageCount} " +
+                         $"a ve skladu zbylo {plan.UnloadedIndices.Length} – některá se ztratila.");
+        }
 
         return problems;
     }

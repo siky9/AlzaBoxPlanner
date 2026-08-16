@@ -24,7 +24,8 @@ Dvě věty ze zadání jsem přečetl jako konkrétní požadavky:
   poptávka větší než kapacita (zajímavý případ), ale program musí zvládnout i to, že se
   vejde všechno. To není jiný algoritmus, jen zkratka na začátku.
 - *„Dvakrát denně.“* – jedno plánování = jeden okruh = 120 naložených dodávek. Druhá jízda
-  je další volání téhož kódu nad zbytkem plus nově naskladněnými zásilkami.
+  je další volání téhož kódu nad zbytkem; `DeliveryPlanner.PlanDay` to řetězí za vás
+  (viz [§3, fáze 4](#fáze-4--druhá-jízda)).
 
 ## 2. Model
 
@@ -70,8 +71,14 @@ skóre(i, θ) = výnos(i) / cena(i, θ)
 ```
 
 θ je stínová cena zdrojů: říká, jestli je vzácnější místo, nebo nosnost. Zásilky se berou
-sestupně podle skóre, dokud se vejdou. Správné θ hledáme **půlením intervalu**, dokud se
-oba zdroje nevyčerpají současně (12 kroků).
+sestupně podle skóre, dokud se vejdou. Správné θ hledáme **půlením intervalu** tak, aby se
+oba zdroje vyčerpaly současně.
+
+Půlení končí, jakmile je dosažený výnos blíž než 0,05 % k horní mezi (§4). Mez platí pro celou
+úlohu, ne jen pro právě zkoušené θ, takže odstup od ní shora omezuje i to, co by našlo θ jiné –
+**certifikát kvality tím slouží zároveň jako podmínka ukončení**, místo aby se ladil počet kroků.
+Na těžké dávce to sráží 14 průchodů na 9 – tedy zhruba čtvrtinu času výběru – a vyjde přitom
+θ i plán do koruny stejný jako při plném půlení. Strop 12 kroků zůstává jako pojistka.
 
 Nejčastěji ale stačí **jediný průchod**: zkusí se θ = 1 (rozhoduje jen objem) a když při něm
 nosnost nikoho neodmítla, je hmotnostní omezení neaktivní, úloha je jednorozměrná a hladový
@@ -122,6 +129,53 @@ s hrubší zrnitostí, kde se za poslední velkou zásilku vejde ještě několi
 průchod navíc je to levná pojistka, takže v kódu zůstává – ale výsledky v tabulce níž jí
 nevděčí za nic.
 
+Že to není mrtvý kód, hlídají testy z obou stran (`VanAssignerTests`): na drobném mixu musí
+vyjít nula, a na dávce s hrubou zrnitostí – deset dodávek, 25 zásilek po 2,5 m³ (do dodávky
+se vejdou dvě a 2 m³ zbudou) plus 300 drobných – musí fáze vrátit do hry **všech 150** drobných
+zásilek, které výběr odmítl.
+
+### Fáze 4 – druhá jízda
+
+Okruh je jednotka optimalizace, ale den má podle zadání jízdy dvě. Nakládací fáze proto vrací
+i `LoadPlan.UnloadedIndices` – co zůstalo ve skladu, seřazené podle výhodnosti. To je přesně
+nabídka další jízdy a `DeliveryPlanner.PlanDay(zásilky, kapacita, rounds: 2)` z toho udělá
+celý den:
+
+```
+okruh   zásilek    objem    nosnost   dodávek        výnos Kč     odstup
+    1    71 706   100,0 %    33,0 %   120 / 120      40 873 922    0,0123 %
+    2    46 667   100,0 %    32,7 %   120 / 120      19 613 459    0,0105 %
+```
+
+Druhá jízda veze o třetinu míň balíků při stejném objemu – ráno se sebraly ty drobné
+a nejvýnosnější na m³, odpoledne jedou větší. Výnos druhé jízdy je proto **necelá polovina**
+té první; to je vlastnost úlohy, ne slabina plánovače (odstup od optima zůstává na 0,01 %).
+
+Okruhy se plánují **hladově za sebou**, ne společně: druhá jízda dostane až to, co první
+nechala. Optimum celého dne by se hledalo jinak – jenže obě jízdy dohromady jsou proti nabídce
+pořád jen 1 680 m³ z potřebných ~3 500, takže omezení zůstává stejné a společné plánování by
+posunulo jen hranici, kde se řez vede. Za dvojnásobek času to nestojí.
+
+Má to jeden důsledek pro certifikát: `DayPlan.GapCzk` je **součet odstupů po okruzích**, tedy
+ztráta výběru měřená v každé jízdě proti její vlastní nabídce – ne mez proti optimálnímu
+rozvržení celého dne. Ta by se dokazovala hůř: nabídky okruhů nejsou disjunktní, ale vnořené,
+zatímco optimální den se naší volbou první jízdy vázat nemusí, a přímočará úvaha dá jen
+`mez₁ + 2·mez₂`. Na 2 000 malých instancích proti optimu z hrubé síly (dva i tři okruhy, pět
+různých rozdělení) mez nepadla ani jednou a v nejtěsnějším případě seděla přesně na optimu –
+takže ověřeno, ne dokázáno, a v reportu je to popsané jako „ztráta výběru“, ne jako odstup od
+optima dne.
+
+Druhý okruh navíc plánuje jen nad zbytkem (228 000 položek místo 300 000), takže stojí míň než
+první – celý den vyjde zhruba na jeden a půl násobku jednoho okruhu, ne na dvojnásobku. Když
+se sklad vyprázdní dřív, další jízda se nenaplánuje vůbec (`-n 20000 -r 2` vyjede jediný okruh
+o 86 dodávkách); stejně tak skončí den okruhem, který nenaložil nic, protože ze zbytku už
+flotila neuveze vůbec nic.
+
+Doskladňování mezi jízdami je stejné volání: nabídkou další jízdy je `UnloadedIndices`
+doplněné o indexy novinek, na to je přímo přetížení
+`Plan(zásilky, nabídka, kapacita)`. Indexy v plánu vždycky ukazují do celého skladu, takže
+se okruhy dají skládat a `LoadPlanValidator` umí ověřit, že žádná zásilka nejede dvakrát.
+
 ## 4. Kvalita řešení – změřená, ne tvrzená
 
 Program u každého plánování vypíše **horní mez optima** z Lagrangeovy relaxace:
@@ -134,13 +188,20 @@ Pro libovolná nezáporná λ je to platná horní mez; multiplikátory bereme z
 odmítnuté) zásilky hladového průchodu, takže odhad vyjde těsný a stojí jeden průchod O(n).
 Rozdíl proti dosaženému výnosu je certifikát – kolik Kč nám nejvýš uniklo.
 
-**Výsledky pro 300 000 zásilek** (Release, jedno jádro, seed 42):
+**Výsledky pro 300 000 zásilek** (Release, seed 42):
 
 | profil | úzké hrdlo | θ | využití objem / nosnost | odstup od optima | čas |
 |---|---|---|---|---|---|
-| `mixed` (256 kg/m³) | objem | 1,0 | 100,00 % / 32,96 % | **0,012 %** (5 017 Kč) | 277 ms |
-| `heavy` (876 kg/m³) | obojí | 0,883 | 100,00 % / 100,00 % | **0,015 %** (6 084 Kč) | 704 ms |
-| `light` (100 kg/m³) | objem | 1,0 | 99,99 % / 11,44 % | **0,020 %** (8 223 Kč) | 287 ms |
+| `mixed` (256 kg/m³) | objem | 1,0 | 100,00 % / 32,96 % | **0,012 %** (5 017 Kč) | ~210 ms |
+| `heavy` (876 kg/m³) | obojí | 0,883 | 100,00 % / 100,00 % | **0,015 %** (6 084 Kč) | ~600 ms |
+| `light` (100 kg/m³) | objem | 1,0 | 99,99 % / 11,44 % | **0,020 %** (8 223 Kč) | ~210 ms |
+| `bulky` (kusové) | objem | 1,0 | 94,55 % / 15,26 % | 5,622 % → viz níž | ~120 ms |
+
+Odstup, využití i θ jsou deterministické – vyjdou na každém stroji stejně. **Časy jsou
+orientační**: pocházejí z jednoho běžného notebooku, měří jen plánování (bez generování dat
+a bez srovnávacích strategií, `--no-baselines`) a mezi běhy kolísají o jednotky procent.
+Absolutní hodnoty tedy neberte doslova; nosné je, že se všechny vejdou hluboko pod sekundu
+a jak se k sobě mají navzájem.
 
 Srovnání s naivními strategiemi (všechny prohnané **stejnou** nakládací fází, aby se
 porovnávaly proveditelné plány):
@@ -158,6 +219,52 @@ aktivní obě omezení. Právě proto to řešení hledá, místo aby si vybralo
 Ověřuje se i proveditelnost: `--verify` zkontroluje, že žádná dodávka nepřekračuje kapacitu,
 žádná zásilka není naložena dvakrát a výnos nepřekračuje horní mez.
 
+### Kdy je odstup ztráta a kdy jen volná mez
+
+Mez počítá se souhrnnou kapacitou, jako by byl náklad tekutina. Pro drobné zásilky to sedí,
+pro kusové zboží ne – a tam přestává být odstup údaj o ztrátě. Plán proto nese verdikt
+(`LoadPlan.Verdict`), který ten rozdíl pojmenuje. Rozhoduje se podle otázky **„unesla by flotila
+ještě něco z toho, co zbylo?“**, ne podle procenta využití; nízké využití samo o sobě neznamená
+nic:
+
+| verdikt | co znamená | jak číst odstup |
+|---|---|---|
+| `NothingLeftToCarry` | nic přepravitelného nezbylo | nula |
+| `Saturated` | úzké hrdlo je vyčerpané | skutečná ztráta, setiny % |
+| `GranularityLimited` | místo zbylo, ale nic se do něj nevejde | **nadhodnocuje** ztrátu |
+| `SpaceLeftUnused` | zbylo místo *i* zásilky do něj | chyba nakládání – hlásí `--verify` |
+
+Na profilu `bulky` (kusové zboží 0,6–3 m³ plus 2 % kusů přes 7 m³) to vidět je: objem skončí
+na 94,5 %, odstup vyjde
+5,62 % – a program k tomu rovnou napíše, že do zbylých mezer se žádná zásilka nevejde a plán
+je proti tomu, co flotila fyzicky uveze, mnohem lepší, než to číslo vypadá. Tentýž mechanismus
+udrží klid u dávky samých zásilek po 3,6 m³: 51 % objemu, ale verdikt `NothingLeftToCarry` nebo
+`GranularityLimited` podle toho, jestli ještě něco zbylo – žádné falešné varování.
+
+Že práh na procentech nestačí, hlídá test `Nizke_vyuziti_samo_o_sobe_verdikt_neurcuje`: dvě
+dávky se shodným využitím objemu musí dostat různý verdikt.
+
+### Co mez neuvidí: nadměrné zboží
+
+Zásilka přes 7 m³ nebo 5,5 t neprojde ani jednou dodávkou. Výběr ji odfiltruje hned na začátku
+a horní mez s ní nepočítá – správně, protože mez má říkat, co uveze *tahle* flotila. Vedlejším
+účinkem ale je, že sklad plný nadměrného zboží vypadá jako splněný plán: odstup od optima
+**0,0000 %**, verdikt „nic přepravitelného nezbylo“, a padesát milionů leží ve skladu.
+
+Proto plán takové zásilky počítá zvlášť (`LoadPlan.NonTransportableCount`) a report je hlásí
+rovnou u výnosnosti. Nejsou to zásilky čekající na další okruh – ty potřebují jiné vozidlo
+a druhá jízda s nimi nepohne, takže se den ukončí okruhem, který už nic nenaložil.
+
+Profil `bulky` obsahuje 2 % zboží přes 7 m³ (sedačka, velká lednička), takže je to vidět rovnou:
+
+```
+⚠ 5 944 zásilek za 16 302 676 Kč neuveze žádná dodávka (> 7 m³ nebo > 5,5 t).
+```
+
+Šestnáct milionů, o kterých by odstup od optima mlčel – protože z pohledu téhle flotily
+mlčet má. Rozhodnutí, co s nimi, je ale byznysové, ne algoritmické, a k tomu je potřeba
+o nich vědět.
+
 ## 5. Výkon
 
 Pro statisíce zásilek není rychlost úzké hrdlo – jedno `Array.Sort` nad 300 000 klíči trvá
@@ -169,9 +276,33 @@ desítky ms. Šlo hlavně o to nepřijít o to zbytečně:
   jen přehazuje reference – nealokuje ani nekopíruje,
 - v horkých smyčkách žádné LINQ.
 
-Kdyby časové okno bylo přísnější, další krok by bylo hledat θ na **vzorku** dávky
-(θ je globální cena, z 10 % dat se odhadne dobře) a plný průchod pustit jen jednou na závěr –
-to by nejhorší případ srazilo zhruba na pětinu. Zatím to nebylo potřeba.
+### Kde by se dalo zrychlit dál – a proč jsem to neudělal
+
+Změřeno, ne odhadnuto: jedno `Array.Sort` nad 300 000 klíči stojí zhruba **31 ms**, zatímco
+ohodnocení téhož pole (lineární průchod s dělením) necelou milisekundu. Na profilu `heavy`
+tedy z času výběru padne zhruba **58 % na samotné řazení**.
+
+Řadit se přitom nemusí všechno. Hladový průchod projde jen zásilky nad kritickým skóre plus
+kousek pod ním – u `mixed` je to čtvrtina pole. Kdyby se pomocí *quickselectu* našel práh
+a seřadil jen ten prefix (se záložní cestou, kdyby prefix nestačil), spadlo by řazení zhruba
+na čtvrtinu a s ním i většina času plánování na profilu `heavy`.
+
+**Přesto to v kódu není**, ze dvou důvodů:
+
+1. `Array.Sort` není stabilní, takže seřazení prefixu rozhodne shodná skóre jinak než seřazení
+   celku. Výsledek by byl stejně dobrý, ale **jiný** – a přepsala by se tím všechna čísla
+   v téhle dokumentaci kvůli zrychlení, které nikdo nepotřebuje.
+2. Byl by to nejsubtilnější kód v celém řešení (odhad prahu, partition, záložní dořazení)
+   umístěný přesně tam, kde chyba stojí nejvíc – a to kvůli času, který se i v nejhorším
+   případě vejde do 0,6 s.
+
+Je to připravená rezerva pro případ, že by dávky vyrostly o řád: milion zásilek zvládne
+současný kód za ~1,4 s, s prefixovým řazením by to bylo pod sekundu. Do zadání
+(„řádově statisíce“) se ale pohodlně vejdeme i bez toho.
+
+Ze stejného soudku: **zhuštění nepřepravitelných zásilek** na začátku by se dalo čekat jako
+levná výhra, ale není – v reálných profilech je nepřepravitelných zásilek nula, takže by se
+ušetřilo jen porovnání na položku a průchod by se nezkrátil ani o jednu.
 
 ## 6. Předpoklady a zjednodušení
 
@@ -185,9 +316,16 @@ to by nejhorší případ srazilo zhruba na pětinu. Zatím to nebylo potřeba.
    Plán je i tak **optimální** (víc jich flotila neuveze) – volná je v tomhle režimu horní mez,
    ne řešení. Hlášený odstup od optima tedy zůstává poctivý horní odhad ztráty, jen přestává
    být těsný. Pro reálný mix AlzaBoxů (setiny až desetiny m³) to nenastává.
+
+   Tenhle předpoklad je jediný, který se dá dávkou porušit, aniž by to bylo vidět – proto si ho
+   program **hlídá sám** a neschovává ho do dokumentace: viz verdikt kapacity v §4 a profil
+   `bulky`. Co program nedělá, je pokus tu ztrátu dohnat; šlo by to (vybírat rovnou s ohledem na
+   to, jak se zboží skládá, místo dvou oddělených fází), ale byla by to jiná úloha než ta zadaná
+   a pro reálnou zrnitost AlzaBoxů by se nevrátila.
 5. **Zásilky jsou nezávislé** – žádná objednávka nemusí jet pohromadě. Rozšíření je snadné:
    objednávka se sloučí do jedné složené položky.
-6. **Obě denní jízdy se plánují nezávisle**, nenaložené zásilky se přesouvají do další.
+6. **Obě denní jízdy se plánují za sebou, ne společně** – druhá dostane to, co první nechala
+   (`PlanDay`, viz fáze 4). Nové zboží naskladněné mezi jízdami se přidá do nabídky té druhé.
 7. Peníze jsou `double`, ne `decimal` – pro plánovací výpočet nad statisíci položkami je
    přesnost hluboko pod haléřem a `decimal` by v horké smyčce zbytečně brzdil.
 
@@ -213,14 +351,16 @@ skórovací funkce na jednom místě (`LagrangianGreedySelector`, výpočet `key
 
 ```
 src/AlzaBox.Planner.Core/
-  Domain/         Package, FleetCapacity, Van, LoadPlan
+  Domain/         Package, FleetCapacity, Van, LoadPlan, DayPlan, CapacityVerdict
   Selection/      IPackageSelector, LagrangianGreedySelector, LagrangianBound, BatchStatistics
   Assignment/     VanAssigner
   Validation/     LoadPlanValidator
-  DeliveryPlanner.cs      fasáda: Plan(zásilky, kapacita) → LoadPlan
+  DeliveryPlanner.cs      fasáda: Plan(zásilky, [nabídka,] kapacita) → LoadPlan
+                                  PlanDay(zásilky, kapacita, okruhů)  → DayPlan
 src/AlzaBox.Planner.Cli/  generátor dat, srovnávací strategie, report
-tests/                    30 testů – hrubá síla na malých instancích, platnost horní meze,
-                          proveditelnost plánu, počet vyjetých dodávek, determinismus
+tests/                    47 testů – hrubá síla na malých instancích, platnost horní meze,
+                          proveditelnost plánu, počet vyjetých dodávek, determinismus, dosypání,
+                          verdikt kapacity, nepřekrývání okruhů dne
 ```
 
 Obě fáze jsou za rozhraním, takže jdou vyměnit nezávisle (`PrioritySelector` v CLI je toho
@@ -230,11 +370,18 @@ příkladem – naivní strategie prochází přesně stejnou nakládací fází
 
 ```
 -n, --packages <počet>              počet generovaných zásilek (výchozí 300000)
--p, --profile  <mixed|heavy|light>  profil nabídky (výchozí mixed)
+-p, --profile  <mixed|heavy|light|bulky>  profil nabídky (výchozí mixed)
 -s, --seed     <číslo>              seed generátoru (výchozí 42)
+-r, --rounds   <počet>              okruhů za den (výchozí 1, zadání počítá se 2)
     --verify                        ověřit proveditelnost výsledného plánu
     --vans                          vypsat náplň prvních deseti dodávek
+    --no-baselines                  vynechat srovnání s naivními strategiemi
+-h, --help                          vypsat nápovědu
 ```
+
+Výchozí `--rounds 1` je záměr: jednotkou optimalizace je jeden okruh a všechna čísla výš platí
+pro něj. Celý den ukáže `--rounds 2`; s `--verify` se u něj navíc kontroluje, že se okruhy
+nepřekrývají.
 
 Případ „úterý a čtvrtek“ se ukáže třeba na `--packages 20000`: vejde se všechno, odstup od
 optima je 0,0000 % a použije se **86 dodávek ze 120** – přesně tolik, kolik jich objem

@@ -28,17 +28,38 @@ namespace AlzaBox.Planner.Core.Selection;
 /// </remarks>
 public sealed class LagrangianGreedySelector : IPackageSelector
 {
-    /// <summary>Počet kroků půlení intervalu při hledání θ. 12 kroků = přesnost ~2·10⁻⁴.</summary>
+    /// <summary>
+    /// Strop na počet kroků půlení intervalu při hledání θ. 12 kroků = přesnost ~2·10⁻⁴;
+    /// v praxi se skoro vždy skončí dřív, viz <see cref="RevenueTolerance"/>.
+    /// </summary>
     private const int BisectionSteps = 12;
+
+    /// <summary>
+    /// Kdy hledání θ končí: jakmile je dosažený výnos takhle blízko horní meze (0,05 %),
+    /// je zbytek prokazatelně nedosažitelný a další průchody by jen spálily časové okno.
+    /// </summary>
+    /// <remarks>
+    /// Mez z Lagrangeovy relaxace platí pro celou úlohu, ne jen pro právě zkoušené θ – když se
+    /// jí výběr dotkne na 0,05 %, nemůže žádné jiné θ přinést víc než těch 0,05 %. Certifikát
+    /// kvality tak slouží i jako podmínka ukončení: neladíme počet kroků, ale přímo to, co nás
+    /// zajímá.
+    /// <para>
+    /// Hodnota je zvolená tak, aby zkrácení bylo <b>zadarmo</b>: na těžké dávce padne 14 průchodů
+    /// na 9 (tedy zhruba čtvrtina času výběru), přičemž vyjde θ i plán do koruny stejný jako při
+    /// plném půlení. Volnější práh už stojí peníze – při 10⁻³ se skončí po 5 průchodech, ale výnos
+    /// spadne o 20 tisíc Kč a odstup od meze vyskočí z 0,015 % na 0,065 %.
+    /// </para>
+    /// </remarks>
+    private const double RevenueTolerance = 5e-4;
 
     public SelectionResult Select(ReadOnlySpan<Package> packages, FleetCapacity capacity)
     {
         BatchStatistics stats = BatchStatistics.Collect(packages, capacity);
 
         // Fáze 0 – úterý a čtvrtek: nabídka se vejde celá, není co optimalizovat.
-        if (stats.TransportableCount > 0
-            && stats.TotalVolumeM3 <= capacity.TotalVolumeM3
-            && stats.TotalWeightKg <= capacity.TotalWeightKg)
+        // Pokrývá i degenerované případy (prázdná dávka, samé nepřepravitelné zboží) –
+        // tam jsou součty nulové, takže se nabídka „vejde“ a nemusí se kvůli tomu řadit.
+        if (stats.TotalVolumeM3 <= capacity.TotalVolumeM3 && stats.TotalWeightKg <= capacity.TotalWeightKg)
         {
             return SelectEverything(packages, capacity, stats);
         }
@@ -67,7 +88,7 @@ public sealed class LagrangianGreedySelector : IPackageSelector
 
             // Fáze 1c – obě omezení jsou aktivní. Půlením hledáme θ, při kterém se
             // oba zdroje vyčerpají současně; f(θ) = využití_objemu − využití_hmotnosti klesá.
-            if (outcome.VolumeWasBinding)
+            if (outcome.VolumeWasBinding && !IsCloseEnough(bestOutcome.RevenueCzk, upperBound))
             {
                 double low = 0.0, high = 1.0;
                 for (int step = 0; step < BisectionSteps; step++)
@@ -83,6 +104,10 @@ public sealed class LagrangianGreedySelector : IPackageSelector
                         (current, best) = (best, current);
                         bestOutcome = outcome;
                     }
+
+                    // Certifikát kvality je zároveň podmínkou ukončení: co zbývá k mezi,
+                    // už žádné θ nedožene.
+                    if (IsCloseEnough(bestOutcome.RevenueCzk, upperBound)) break;
 
                     if (outcome.VolumeUtilization > outcome.WeightUtilization) low = middle;
                     else high = middle;
@@ -102,6 +127,14 @@ public sealed class LagrangianGreedySelector : IPackageSelector
             GreedyRuns = runs,
         };
     }
+
+    /// <summary>
+    /// Je výběr tak blízko horní meze, že další hledání θ už nemá co získat?
+    /// Mez je platná pro celou úlohu, takže odstup od ní shora omezuje i to, co by našlo
+    /// libovolné jiné θ.
+    /// </summary>
+    private static bool IsCloseEnough(double revenueCzk, double upperBoundCzk)
+        => revenueCzk >= upperBoundCzk * (1.0 - RevenueTolerance);
 
     /// <summary>
     /// Jeden hladový průchod pro dané θ: ohodnotí, seřadí a nabere zásilky do souhrnné kapacity.
@@ -232,6 +265,11 @@ public sealed class LagrangianGreedySelector : IPackageSelector
     /// Předalokovaná pracovní pole. Držíme dvě sady (aktuální + dosud nejlepší) a jen mezi nimi
     /// přehazujeme reference, takže hledání θ nealokuje ani nekopíruje.
     /// </summary>
+    /// <remarks>
+    /// Pole <see cref="Order"/> vítězné sady odchází ven jako <see cref="SelectionResult.RankedOrder"/>.
+    /// Není to půjčka: <c>Workspace</c> po návratu z <c>Select</c> zaniká a nikdo jiný na to pole
+    /// nedrží odkaz, takže ho volající dostává do vlastnictví – stejně jako <c>SelectedIndices</c>.
+    /// </remarks>
     private sealed class Workspace(int capacity)
     {
         public double[] Key { get; } = new double[capacity];

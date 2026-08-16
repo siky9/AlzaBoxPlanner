@@ -27,8 +27,12 @@ public sealed class SelectionResult
     /// </summary>
     public required double UpperBoundCzk { get; init; }
 
-    /// <summary>Váha objemu v cenové funkci; 1 = rozhoduje jen objem, 0 = rozhoduje jen hmotnost.</summary>
-    public required double Theta { get; init; }
+    /// <summary>
+    /// Váha objemu v cenové funkci; 1 = rozhoduje jen objem, 0 = rozhoduje jen hmotnost.
+    /// <c>null</c> u strategií, které stínovou cenu vůbec nehledají – lepší než ji předstírat
+    /// hodnotou, kterou by pak někdo bral vážně.
+    /// </summary>
+    public required double? Theta { get; init; }
 
     /// <summary>Kolik průchodů (řazení) si hledání θ vyžádalo.</summary>
     public required int GreedyRuns { get; init; }

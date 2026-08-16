@@ -103,7 +103,8 @@ public class LagrangianGreedySelectorTests
 
         SelectionResult result = _selector.Select(packages, capacity);
 
-        Assert.InRange(result.Theta, 0.001, 0.999);
+        double theta = Assert.NotNull(result.Theta);
+        Assert.InRange(theta, 0.001, 0.999);
         Assert.True(result.VolumeM3 > 0.99 * capacity.TotalVolumeM3);
         Assert.True(result.WeightKg > 0.99 * capacity.TotalWeightKg);
         Assert.True(result.GapPercent < 0.1, $"Odstup od meze {result.GapPercent:F4} % je příliš velký.");
