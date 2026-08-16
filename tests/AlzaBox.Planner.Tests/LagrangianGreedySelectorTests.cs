@@ -82,7 +82,7 @@ public class LagrangianGreedySelectorTests
     [Fact]
     public void Kdyz_limituje_jen_objem_stavi_hladovy_vyber_na_hustote_vynosu()
     {
-        // Lehké zboží – nosnost se nemůže stát úzkým hrdlem, θ musí zůstat na 1.
+        // Lehké zboží – nosnost se nemůže stát bottleneckem, θ musí zůstat na 1.
         Package[] packages = TestBatches.Random(count: 50_000, seed: 11, minDensity: 30, maxDensity: 120);
 
         SelectionResult result = _selector.Select(packages, FleetCapacity.Default);

@@ -25,14 +25,15 @@ public enum CapacityVerdict
     NothingLeftToCarry,
 
     /// <summary>
-    /// Úzké hrdlo je vyčerpané. Odstup od meze je skutečná ztráta výběru a v praxi setiny procenta.
+    /// Bottleneck je vyčerpaný. Odstup od meze je skutečná ztráta výběru a v praxi setiny procenta.
     /// </summary>
     Saturated,
 
     /// <summary>
     /// Ve flotile zbývá místo, ale nic ze skladu se do něj nevejde – limituje zrnitost nákladu,
     /// ne výběr. Horní mez bere kapacitu jako tekutinu, takže odstup ztrátu <b>nadhodnocuje</b>:
-    /// plán může být optimální a mez přesto vzdálená (viz předpoklad P4 v README).
+    /// plán může být optimální a mez přesto vzdálená. Nastává, když zásilka přestane být proti
+    /// dodávce drobná (kusové zboží) – přesně tam, kde se láme rozpojení výběru a nakládání.
     /// </summary>
     GranularityLimited,
 

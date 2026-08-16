@@ -18,7 +18,7 @@ public sealed record FleetCapacity(int VanCount, double VanVolumeM3, double VanW
     public double TotalWeightKg => VanCount * VanWeightKg;
 
     /// <summary>
-    /// Hustota, při které se úzké hrdlo překlápí z objemu na hmotnost (~785,7 kg/m³).
+    /// Hustota, při které se bottleneck překlápí z objemu na hmotnost (~785,7 kg/m³).
     /// Reálné zásilky mívají 100–250 kg/m³, takže obvykle limituje objem – algoritmus na to ale nespoléhá.
     /// </summary>
     public double BreakEvenDensityKgPerM3 => TotalWeightKg / TotalVolumeM3;

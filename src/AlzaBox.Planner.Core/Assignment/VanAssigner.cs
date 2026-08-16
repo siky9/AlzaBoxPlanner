@@ -22,7 +22,7 @@ namespace AlzaBox.Planner.Core.Assignment;
 public sealed class VanAssigner
 {
     /// <summary>
-    /// Od jakého využití úzkého hrdla považujeme flotilu za vyčerpanou. 99,9 % je necelá
+    /// Od jakého využití bottlenecku považujeme flotilu za vyčerpanou. 99,9 % je necelá
     /// nedovezená m³ z 840 – pod tím už stojí za to ptát se proč.
     /// </summary>
     private const double SaturationThreshold = 0.999;

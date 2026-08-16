@@ -118,9 +118,9 @@ public static class PlanReport
         switch (plan.Verdict)
         {
             case CapacityVerdict.GranularityLimited:
-                Console.WriteLine($"  ⚠ {prefix}Úzké hrdlo zůstalo na {bottleneck:P1} a přesto se nedá naložit víc:");
+                Console.WriteLine($"  ⚠ {prefix}Bottleneck zůstal na {bottleneck:P1} a přesto se nedá naložit víc:");
                 Console.WriteLine("    zbylé zásilky jsou tak velké, že se do žádné mezery nevejdou. Horní mez bere");
-                Console.WriteLine("    kapacitu jako tekutinu, takže odstup výš ztrátu nadhodnocuje (předpoklad P4).");
+                Console.WriteLine("    kapacitu jako tekutinu, takže odstup výš ztrátu nadhodnocuje.");
                 break;
 
             case CapacityVerdict.SpaceLeftUnused:
@@ -188,8 +188,8 @@ public static class PlanReport
     private static string DescribeTheta(double? theta) => theta switch
     {
         null => "neurčeno   (strategie stínovou cenu nehledá)",
-        >= 0.999 => $"{theta:N4}   (úzkým hrdlem je objem)",
-        <= 0.001 => $"{theta:N4}   (úzkým hrdlem je hmotnost)",
+        >= 0.999 => $"{theta:N4}   (bottleneckem je objem)",
+        <= 0.001 => $"{theta:N4}   (bottleneckem je hmotnost)",
         _ => $"{theta:N4}   (obě omezení jsou aktivní)",
     };
 

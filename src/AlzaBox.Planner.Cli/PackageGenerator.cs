@@ -2,7 +2,7 @@ using AlzaBox.Planner.Core.Domain;
 
 namespace AlzaBox.Planner.Cli;
 
-/// <summary>Profil nabídky zásilek – mění, které omezení bude pro flotilu úzkým hrdlem.</summary>
+/// <summary>Profil nabídky zásilek – mění, které omezení bude pro flotilu bottleneckem.</summary>
 public enum BatchProfile
 {
     /// <summary>Běžný mix e-shopu. Průměrná hustota hluboko pod 786 kg/m³, limituje objem.</summary>
@@ -17,8 +17,9 @@ public enum BatchProfile
     /// <summary>
     /// Kusové zboží velikosti nábytku či bílé techniky – 0,6–3 m³ a k tomu 2 % kusů přes 7 m³,
     /// které se do dodávky nevejdou vůbec. Zásilka tu přestává být proti dodávce drobná, takže
-    /// se rozpad na výběr a nakládání začne lámat o zrnitost: mezní případ předpokladu P4,
-    /// na kterém je vidět verdikt <c>GranularityLimited</c> i hlášení o nepřepravitelném zboží.
+    /// se rozpad na výběr a nakládání začne lámat o zrnitost – mezní případ předpokladu, že je
+    /// zásilka proti dodávce drobná. Je na něm vidět verdikt <c>GranularityLimited</c>
+    /// i hlášení o nepřepravitelném zboží.
     /// </summary>
     Bulky,
 }
@@ -72,7 +73,7 @@ public static class PackageGenerator
             ? random.NextDouble() * 900 + 900
             : random.NextDouble() * 300 + 150,
         BatchProfile.Light => random.NextDouble() * 120 + 30,
-        // Nábytek a bílá technika – lehké na svůj objem, nosnost se úzkým hrdlem nestane.
+        // Nábytek a bílá technika – lehké na svůj objem, nosnost se bottleneckem nestane.
         BatchProfile.Bulky => random.NextDouble() * 140 + 60,
         _ => throw new ArgumentOutOfRangeException(nameof(profile)),
     };

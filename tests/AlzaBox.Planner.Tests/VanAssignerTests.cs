@@ -82,7 +82,7 @@ public class VanAssignerTests
     [Fact]
     public void Nasycena_flotila_se_pozna_a_mlci()
     {
-        // Reálný mix: úzké hrdlo je vyčerpané, odstup od meze je skutečná ztráta.
+        // Reálný mix: bottleneck je vyčerpaný, odstup od meze je skutečná ztráta.
         Package[] packages = TestBatches.Random(count: 200_000, seed: 51, minDensity: 80, maxDensity: 300);
 
         LoadPlan plan = _planner.Plan(packages, FleetCapacity.Default);
@@ -184,8 +184,9 @@ public class VanAssignerTests
     [Fact]
     public void Na_drobnem_mixu_uz_dosypavani_nema_co_delat()
     {
-        // Protipól k testům výš a doklad tvrzení z README: u statisíců drobných zásilek
-        // zaplní hlavní průchod flotilu tak těsně, že dosypávání nezbyde použitelná mezera.
+        // Protipól k testům výš: u statisíců drobných zásilek zaplní hlavní průchod flotilu
+        // tak těsně, že na dosypávání nezbyde použitelná mezera. Fáze tedy musí umět obojí –
+        // zasáhnout u hrubé zrnitosti a nedělat nic tady.
         Package[] packages = TestBatches.Random(count: 200_000, seed: 47, minDensity: 80, maxDensity: 300);
 
         LoadPlan plan = _planner.Plan(packages, FleetCapacity.Default);

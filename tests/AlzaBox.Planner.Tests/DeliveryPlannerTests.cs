@@ -22,7 +22,7 @@ public class DeliveryPlannerTests
     }
 
     [Fact]
-    public void Rozdeleni_do_dodavek_uzke_hrdlo_temer_nezmrha()
+    public void Rozdeleni_do_dodavek_bottleneck_temer_nezmrha()
     {
         // Nejtěžší případ pro rozdělování: obě omezení jsou blízko sebe, takže dodávka
         // musí dostat správný mix hustot, jinak se zablokuje v jednom rozměru.
@@ -35,7 +35,7 @@ public class DeliveryPlannerTests
         Assert.True(plan.GapPercent < 0.5,
             $"Odstup od horní meze {plan.GapPercent:F3} % je příliš velký.");
         Assert.True(Math.Max(plan.VolumeUtilization, plan.WeightUtilization) > 0.99,
-            $"Úzké hrdlo zůstalo nevyužité: objem {plan.VolumeUtilization:P2}, nosnost {plan.WeightUtilization:P2}.");
+            $"Bottleneck zůstal nevyužitý: objem {plan.VolumeUtilization:P2}, nosnost {plan.WeightUtilization:P2}.");
     }
 
     [Fact]
